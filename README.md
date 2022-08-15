@@ -52,3 +52,5 @@ mac： [AnotherRedisDesktopManager](https://github.com/qishibo/AnotherRedisDeskt
 
 ![](https://github.com/appleloveme/dg_gpu_queuer/blob/main/imgs/mac.png)
 
+使用请注明出处！谢谢
+
