@@ -84,5 +84,7 @@ mac： [AnotherRedisDesktopManager](https://github.com/qishibo/AnotherRedisDeskt
 
 ![](https://github.com/appleloveme/dg_gpu_queuer/blob/main/imgs/mac.png)
 
+注意：要想随时随地查看Redis信息，脱离内网使用，需要将内网网址替换为内网穿透的网址！
+
 使用请注明出处！谢谢
 
