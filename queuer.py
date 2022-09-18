@@ -5,6 +5,7 @@ import os
 import datetime
 from redis import Redis
 
+
 def set_config_gpus(config):
     redis_client = RedisClient()
     if config.use_gpu and isinstance(config.visible_cuda, str) and 'auto_select_' in config.visible_cuda:
@@ -19,12 +20,10 @@ def set_config_gpus(config):
             # 有足够可用GPU
             config.wait_gpus = False
             config.visible_cuda = available_gpus[:min_count]
-            if isinstance(available_gpus, int):
-                config.default_device = f'cuda:{available_gpus}'
-            else:
-                config.default_device = f'cuda:{available_gpus[0]}'
-            redis_client.register_gpus(config)
-            print(f"自动选择GPU：{str(config.visible_cuda)}")
+            config.want_gpu_num = len(config.visible_cuda)
+            config.default_device = f'cuda:{config.visible_cuda[0]}'
+            config.task_id = redis_client.register_gpus(config)
+            log.info(f"自动选择GPU：{str(config.visible_cuda)}")
         else:
             # 可用GPU不足
             if config.wait_gpus:
@@ -48,19 +47,15 @@ def set_config_gpus(config):
             available_gpus = reserve_gpus
             config.wait_gpus = False
             config.visible_cuda = available_gpus[:min_count]
-            if isinstance(available_gpus, int):
-                config.default_device = f'cuda:{available_gpus}'
-            else:
-                config.default_device = f'cuda:{available_gpus[0]}'
-            redis_client.register_gpus(config)
+            config.want_gpu_num = len(config.visible_cuda)
+            config.default_device = f'cuda:{config.visible_cuda[0]}'
+            config.task_id = redis_client.register_gpus(config)
         else:
             # 排队
             config.task_id = redis_client.join_wait_queue(config)
     else:
         # 使用CPU
-        config.default_device = f'cpu'
-        config.wait_gpus = False
-        config.visible_cuda = []
+        pass
 
     ###############################################
     # 检查是否需要等待Gpu
@@ -70,7 +65,7 @@ def set_config_gpus(config):
         if redis_client.is_my_turn(config):
             # 循环获取当前可用Gpu
             try:
-                min_count = int(config.visible_cuda.split('auto_select_')[-1]) if isinstance(config.visible_cuda, str) and "auto_select_" in config.visible_cuda else len(config.visible_cuda)
+                min_count = config.want_gpu_num
                 gpus = select_devices(format='index', min_count=min_count,
                                       min_free_memory=config.cuda_min_free_memory,max_memory_utilization=config.cuda_max_memory_utilization)
                 self_occupied_gpus = redis_client.get_self_occupied_gpus()
@@ -94,38 +89,37 @@ def set_config_gpus(config):
                     # 自动选择，确认等待
                     if config.confirm_gpu_free and config.last_confirm_gpus == available_gpus[:min_count]:
                         # 如果满足条件退出循环
-                        print("发现足够可用GPU并二次确认成功！")
+                        log.info("发现足够可用GPU并二次确认成功！")
                         config.wait_gpus = False
                         config.visible_cuda = available_gpus[:min_count]
-                        if isinstance(available_gpus, int):
-                            config.default_device = f'cuda:{available_gpus}'
-                        else:
-                            config.default_device = f'cuda:{available_gpus[0]}'
+                        config.want_gpu_num = len(config.visible_cuda)
+                        config.default_device = f'cuda:{config.visible_cuda[0]}'
                         redis_client.pop_wait_queue(config)
-                        redis_client.register_gpus(config)
+                        config.task_id = redis_client.register_gpus(config)
                         break
                     else:
                         # 设置单次确认空闲
-                        print("发现足够可用GPU！即将进行二次确认！")
+                        log.info("发现足够可用GPU！即将进行二次确认！")
                         config.confirm_gpu_free = True
                         config.last_confirm_gpus = available_gpus[:min_count]
                         redis_client.update_queue(config)
                         time.sleep(30)
                         continue
                 # 重置确认信息
-                print("当前无足够可用GPU，继续等待......")
+                log.info("当前无足够可用GPU，继续等待......")
                 if config.confirm_gpu_free:
-                    print("二次确认失败，继续等待......")
+                    log.info("二次确认失败，继续等待......")
                 config.confirm_gpu_free = False
                 config.last_confirm_gpus = []
                 redis_client.update_queue(config)
                 time.sleep(30)
             except Exception as e:
-                print(e)
+                print_error_info(e)
+                raise e
         else:
             # 排队ing......
             wait_num = len(redis_client.client.lrange('wait_queue', 0, -1)) - 1
-            print(f"正在排队中！ 前方还有 {wait_num} 个训练任务！")
+            log.info(f"正在排队中！ 前方还有 {wait_num} 个训练任务！")
             time.sleep(60)
 
     return config
